@@ -1,6 +1,16 @@
 # ANALIS-BOT
 
-Scouting koin otomatis tiap 4 jam. Hasil dikirim ke Discord (dan Telegram jika diaktifkan).
+Scouting koin otomatis tiap 1 jam. Bot menilai top 300 koin market cap dengan indikator RSI (candle 4H yang sudah close), memberi grade 1-10, lalu menampilkan koin dengan grade terbaik (default grade 6-10, maksimal 10 koin). Hasil dikirim ke Discord (dan Telegram jika diaktifkan).
+
+## Aturan RSI
+- RSI 35-45: sangat direkomendasikan (label SANGAT REKOMENDASI).
+- RSI 45-60: rekomendasi biasa, grade turun sesuai kenaikan RSI.
+- RSI 60-70: titik jenuh, koin dibatalkan (grade 0, tidak ditampilkan dan tidak masuk entry).
+- RSI di luar 35-70: tidak dinilai.
+- Skala grade: RSI 35 = 10 poin, RSI 70 = 1 poin, dibulatkan ke bilangan bulat.
+- Hasil lengkap semua koin tersimpan di `results/ranking.csv`.
+
+Breakout simulasi tetap menolak RSI jenuh atau di luar 35-70. Kandidat yang lolos diurutkan dari grade tertinggi. Ambang entry bisa diatur lewat `rsi.entry_grade_min` (default 1). Catatan: breakout biasanya membuat RSI naik, jadi jika ambang entry dinaikkan ke 6, simulasi hampir tidak akan pernah entry.
 
 Output ini adalah hasil analisis otomatis, bukan saran investasi.
 
@@ -20,4 +30,4 @@ Output ini adalah hasil analisis otomatis, bukan saran investasi.
 Webhook URL jangan ditaruh di `config.json` atau kode. Kalau pernah terlihat orang lain, hapus webhook itu di Discord dan buat yang baru.
 
 ## Mengubah parameter
-Cukup edit `config.json`, misalnya `filters.corr_min` atau `order.tp_pct`. Tidak perlu mengubah kode.
+Cukup edit `config.json`, misalnya `universe.top_n`, `rsi.min`, `rsi.max`, `rsi.grade_min`, atau `rsi.show_top`. Tidak perlu mengubah kode.
