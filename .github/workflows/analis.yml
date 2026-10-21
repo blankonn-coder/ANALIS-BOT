@@ -2,13 +2,16 @@ name: analis-4h
 
 on:
   schedule:
-    # Setiap 4 jam: 00, 04, 08, 12, 16, 20 UTC
-    # (= 07, 11, 15, 19, 23, 03 WIB)
+    # Setiap 4 jam: 00, 04, 08, 12, 16, 20 UTC (= 07, 11, 15, 19, 23, 03 WIB)
     - cron: "0 0,4,8,12,16,20 * * *"
-  workflow_dispatch:   # bisa dijalankan manual dari tab Actions
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: analis
+  cancel-in-progress: false
 
 jobs:
   scout:
@@ -16,6 +19,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - uses: actions/setup-python@v5
         with:
@@ -26,6 +31,7 @@ jobs:
 
       - name: Jalankan analis
         env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           CRYPTOQUANT_API_KEY: ${{ secrets.CRYPTOQUANT_API_KEY }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
