@@ -1,0 +1,40 @@
+name: analis-4h
+
+on:
+  schedule:
+    # Setiap 4 jam: 00, 04, 08, 12, 16, 20 UTC
+    # (= 07, 11, 15, 19, 23, 03 WIB)
+    - cron: "0 0,4,8,12,16,20 * * *"
+  workflow_dispatch:   # bisa dijalankan manual dari tab Actions
+
+permissions:
+  contents: read
+
+jobs:
+  scout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Jalankan analis
+        env:
+          CRYPTOQUANT_API_KEY: ${{ secrets.CRYPTOQUANT_API_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python analis.py
+
+      - name: Simpan hasil
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hasil-analisis
+          path: results/
+          retention-days: 14
