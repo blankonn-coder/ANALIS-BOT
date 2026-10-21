@@ -98,6 +98,20 @@ asks_thin = [(101.0, 0.5)]  # slippage besar -> harus ditolak
 pos2, err2 = C.plan_entry("XUSDT", sig, mid, asks_thin, 1000, RK, 0)
 check("slippage terlalu besar ditolak", pos2 is None and err2 is not None)
 
+# 6c. Grade RSI 1-10 (35-70), jenuh 60-70 dibatalkan
+R = cfg["rsi"]
+check("RSI 35 -> grade 10", C.rsi_grade(35.0, R)["grade"] == 10)
+check("RSI 40 -> sangat rekomendasi", C.rsi_grade(40.0, R)["label"] == "SANGAT REKOMENDASI")
+check("RSI 45 masih sangat rekomendasi", C.rsi_grade(45.0, R)["label"] == "SANGAT REKOMENDASI")
+check("RSI 50 -> label rekomendasi biasa", C.rsi_grade(50.0, R)["label"] == "REKOMENDASI")
+check("RSI 60 dibatalkan (jenuh)", C.rsi_grade(60.0, R)["grade"] == 0)
+check("RSI 65 dibatalkan (jenuh)", C.rsi_grade(65.0, R)["grade"] == 0)
+check("RSI 30 di luar rentang", C.rsi_grade(30.0, R)["grade"] == 0)
+check("RSI 75 di luar rentang", C.rsi_grade(75.0, R)["grade"] == 0)
+grades = [C.rsi_grade(x / 2, R)["grade"] for x in range(70, 118)]  # RSI 35.0 s/d 58.5
+check("grade turun monoton saat RSI naik", all(a >= b for a, b in zip(grades, grades[1:])))
+check("grade selalu 1-10 di rentang valid", all(1 <= g <= 10 for g in grades))
+
 # 7. Backtest engine end-to-end (data sintetis, tanpa internet)
 N = 900
 btc = synth(N, drift=0.0005)
