@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """
-analis.py - Scouting koin otomatis (4H, Peak Trading Hours).
-Konfigurasi ada di config.json. Webhook Discord dari env DISCORD_WEBHOOK_URL.
-Output: 2 HIGH, 2 MEDIUM, 2 LOW (berdasarkan urutan skor kandidat).
+analis.py - scan sinyal 4H live, simulasi entry dengan slippage order book,
+dan pelacakan posisi (state di data/state.json, riwayat di data/trades.csv).
 Output adalah hasil analisis otomatis, BUKAN saran investasi.
 """
 
-import json
-import math
 import os
 import time
 from datetime import datetime, timedelta, timezone
@@ -15,78 +12,28 @@ from pathlib import Path
 
 import requests
 
-# ================= KONFIG =================
-BASE_DIR = Path(__file__).resolve().parent
-CFG = json.loads((BASE_DIR / "config.json").read_text(encoding="utf-8"))
+import core as C
 
-UNI = CFG["universe"]
-FLT = CFG["filters"]
-IND = CFG["indicators"]
-ONC = CFG["onchain"]
-SENT = CFG["sentiment"]
-SC = CFG["scoring"]
-OUT = CFG["output"]
-DLY = CFG["delays"]
-SRC = CFG["sources"]
-NOTIFY = CFG["notify"]
-
+cfg = C.load_config()
+S, RK, CO = cfg["signal"], cfg["risk"], cfg["costs"]
+LQ, UNI, DLY, NOTIFY = cfg["liquidity"], cfg["universe"], cfg["delays"], cfg["notify"]
+EXCL = {s.upper() for s in UNI["exclude_symbols"]}
 STABLE = {s.lower() for s in UNI["stablecoins"]}
-EXCLUDE = {s.upper() for s in UNI["exclude_symbols"]}
 
-CQ_KEY = os.getenv("CRYPTOQUANT_API_KEY", "")
+STATE = C.BASE_DIR / "data" / "state.json"
+TRADES = C.BASE_DIR / "data" / "trades.csv"
+RESULTS = C.BASE_DIR / "results"
+
 DISCORD_URL = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
 TG_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 TG_CHAT = os.getenv("TELEGRAM_CHAT_ID", "")
 
-SESSION = requests.Session()
-SESSION.headers["User-Agent"] = "analis-bot/1.2"
-BASE = None  # diisi oleh binance_init()
 
-
-# ================= HTTP =================
-def get(url, params=None, headers=None, retries=3):
-    last = None
-    for i in range(retries):
-        try:
-            r = SESSION.get(url, params=params, headers=headers, timeout=20)
-            if r.status_code == 429:
-                time.sleep(10 * (i + 1))
-                last = "429 rate limit"
-                continue
-            r.raise_for_status()
-            return r.json()
-        except requests.RequestException as e:
-            last = type(e).__name__  # jangan cetak URL/kunci ke log
-            time.sleep(2 * (i + 1))
-    raise RuntimeError(f"Gagal GET {url.split('?')[0]}: {last}")
-
-
-def binance_init():
-    """Pilih base URL Binance yang bisa diakses, lalu ambil daftar pasangan USDT aktif."""
-    global BASE
-    for b in SRC["binance"]:
-        try:
-            info = get(b + "exchangeInfo")
-            BASE = b
-            print(f"Binance aktif via: {b}")
-            return {s["symbol"] for s in info["symbols"]
-                    if s["quoteAsset"] == "USDT" and s["status"] == "TRADING"}
-        except Exception as e:
-            print(f"[warn] {b} tidak bisa diakses: {e}")
-    raise RuntimeError("Semua endpoint Binance gagal diakses")
-
-
-def binance(path, params=None):
-    return get(BASE + path, params=params)
-
-
-# ================= DATA =================
 def top_coins():
-    """Ambil Top N market cap dari CoinGecko, buang stablecoin."""
-    top_n = UNI["top_n"]
+    """Top N market cap dari CoinGecko, tanpa stablecoin."""
     coins, page = [], 1
-    while len(coins) < top_n:
-        data = get(SRC["coingecko"] + "coins/markets", params={
+    while len(coins) < UNI["top_n"]:
+        data = C.http_get(cfg["sources"]["coingecko"] + "coins/markets", params={
             "vs_currency": "usd", "order": "market_cap_desc",
             "per_page": 100, "page": page})
         if not data:
@@ -94,151 +41,18 @@ def top_coins():
         coins += data
         page += 1
         time.sleep(DLY["coingecko_page_sec"])
-
     res = []
     for c in coins:
         rank = c.get("market_cap_rank")
-        if rank is None or rank > top_n:
+        if rank is None or rank > UNI["top_n"]:
             continue
-        if c["symbol"].lower() in STABLE:
+        if c["symbol"].lower() in STABLE or c["symbol"].upper() in EXCL:
             continue
-        res.append({"rank": rank, "symbol": c["symbol"].upper(), "name": c["name"]})
+        res.append({"rank": rank, "symbol": c["symbol"].upper()})
     return res
 
 
-def klines(symbol, limit=FLT["candles"]):
-    """Candle 4H yang sudah CLOSE (candle berjalan dibuang)."""
-    raw = binance("klines", {"symbol": symbol, "interval": "4h", "limit": limit})
-    now_ms = int(time.time() * 1000)
-    out = []
-    for k in raw:
-        if k[6] >= now_ms:
-            continue
-        out.append({
-            "t": k[0], "o": float(k[1]), "h": float(k[2]), "l": float(k[3]),
-            "c": float(k[4]), "v": float(k[5]),
-            "qv": float(k[7]), "tbq": float(k[10]),
-        })
-    return out
-
-
-def whale_4h(symbol):
-    """Proksi whale: ada transaksi tunggal >= batas dalam N trade terakhir."""
-    try:
-        trades = binance("aggTrades", {"symbol": symbol, "limit": ONC["aggtrades_limit"]})
-        return any(float(t["p"]) * float(t["q"]) >= ONC["whale_usd"] for t in trades)
-    except Exception:
-        return False
-
-
-def netflow_4h(asset):
-    """Netflow exchange 4 jam terakhir dari CryptoQuant (butuh API key).
-    Verifikasi path & field sesuai dokumentasi plan CryptoQuant kamu."""
-    if not (ONC["use_netflow"] and CQ_KEY):
-        return None
-    try:
-        d = get(SRC["cryptoquant"] + f"{asset.lower()}/exchange-flows/netflow",
-                params={"window": ONC["netflow_window"], "limit": ONC["netflow_limit"]},
-                headers={"Authorization": f"Bearer {CQ_KEY}"})
-        rows = d["result"]["data"]
-        return sum(float(x["netflow_total"]) for x in rows)
-    except Exception:
-        return None
-
-
-def tvl_map():
-    """Peta simbol -> protokol DefiLlama (TVL tertinggi per simbol)."""
-    try:
-        protocols = get(SRC["defillama"] + "protocols")
-    except Exception:
-        return {}
-    m = {}
-    for p in protocols:
-        sym = (p.get("symbol") or "").upper()
-        if not sym or sym == "-":
-            continue
-        if sym not in m or (p.get("tvl") or 0) > (m[sym].get("tvl") or 0):
-            m[sym] = p
-    return m
-
-
-# ================= INDIKATOR =================
-def returns(xs):
-    return [xs[i] / xs[i - 1] - 1 for i in range(1, len(xs))]
-
-
-def corr_beta(a, b):
-    """Pearson correlation dan beta (a terhadap b)."""
-    n = len(a)
-    ma, mb = sum(a) / n, sum(b) / n
-    cov = sum((x - ma) * (y - mb) for x, y in zip(a, b))
-    va = sum((x - ma) ** 2 for x in a)
-    vb = sum((y - mb) ** 2 for y in b)
-    if va == 0 or vb == 0:
-        return 0.0, 0.0
-    return cov / math.sqrt(va * vb), cov / vb
-
-
-def atr_pct(cs, n=IND["atr_period"]):
-    """ATR Wilder sebagai persen dari harga close."""
-    trs = []
-    for i in range(1, len(cs)):
-        h, l, pc = cs[i]["h"], cs[i]["l"], cs[i - 1]["c"]
-        trs.append(max(h - l, abs(h - pc), abs(l - pc)))
-    atr = sum(trs[:n]) / n
-    for tr in trs[n:]:
-        atr = (atr * (n - 1) + tr) / n
-    return atr / cs[-1]["c"] * 100
-
-
-def rsi(closes, n=IND["rsi_period"]):
-    gains, losses = [], []
-    for i in range(1, len(closes)):
-        d = closes[i] - closes[i - 1]
-        gains.append(max(d, 0))
-        losses.append(max(-d, 0))
-    ag, al = sum(gains[:n]) / n, sum(losses[:n]) / n
-    for g, l in zip(gains[n:], losses[n:]):
-        ag = (ag * (n - 1) + g) / n
-        al = (al * (n - 1) + l) / n
-    if al == 0:
-        return 100.0
-    return 100 - 100 / (1 + ag / al)
-
-
-def technical(cs):
-    """Breakout/support + volume >= vol_mult x MA + RSI di rentang yang ditentukan."""
-    n = IND["ma_period"]
-    last = cs[-1]
-    prev = cs[-(n + 1):-1]
-    pts, flags = 0, []
-
-    hi = max(c["h"] for c in prev)
-    lo = min(c["l"] for c in prev)
-    if last["c"] > hi:
-        pts += SC["breakout"]; flags.append("breakout")
-    elif last["c"] <= lo * 1.02:
-        pts += SC["near_support"]; flags.append("dekat support")
-
-    vma = sum(c["v"] for c in prev) / len(prev)
-    if last["v"] >= IND["vol_mult"] * vma:
-        pts += SC["volume"]; flags.append(f"volume>{IND['vol_mult']}x")
-
-    r = rsi([c["c"] for c in cs])
-    if IND["rsi_lo"] <= r <= IND["rsi_hi"]:
-        pts += SC["rsi"]; flags.append(f"RSI {r:.0f}")
-    return pts, flags
-
-
-def taker_points(taker):
-    """Skor taker buy ratio kontinu: 0 di batas bawah, penuh di batas atas."""
-    lo, hi = SENT["taker_floor"], SENT["taker_cap"]
-    frac = min(max((taker - lo) / (hi - lo), 0.0), 1.0)
-    return round(frac * SC["taker"], 1)
-
-
-# ================= OUTPUT =================
-def fmt(p):
+def price(p):
     if p >= 1000:
         return f"{p:,.2f}"
     if p >= 1:
@@ -246,40 +60,38 @@ def fmt(p):
     return f"{p:.8f}"
 
 
-def assign_grades(ranked):
-    """Ambil kandidat berurutan skor tertinggi, lalu isi slot grade.
-    Dengan slot 2/2/2: 2 teratas = HIGH, 2 berikutnya = MEDIUM, 2 berikutnya = LOW."""
-    result, idx = [], 0
-    for label, n in OUT["slots"]:
-        for _ in range(n):
-            if idx >= len(ranked):
-                return result
-            result.append((label, ranked[idx]))
-            idx += 1
-    return result
-
-
-def split_text(text, limit):
-    parts, cur = [], ""
-    for line in text.splitlines(keepends=True):
-        if len(cur) + len(line) > limit and cur:
-            parts.append(cur)
-            cur = ""
-        cur += line
-    if cur:
-        parts.append(cur)
-    return parts
+def track(bn, pos, now_ms):
+    """Cek candle 4H yang sudah close sejak posisi dibuka. Mengembalikan trade jika selesai."""
+    cs = C.closed_only(bn.klines(pos["symbol"], limit=500,
+                                 start_ms=pos["track_from_ms"]), now_ms)
+    for c in cs:
+        if c["t"] < pos["track_from_ms"] or c["t"] <= pos["last_ms"]:
+            continue
+        pos["bars"] += 1
+        pos["last_ms"] = c["t"]
+        res = C.check_exit(pos, c, pos["bars"], RK["max_hold_bars"], CO["exit_slip_bps"])
+        if res:
+            px, reason = res
+            return C.settle(pos, px, reason, c["close_ms"], CO["fee_bps"])
+    return None
 
 
 def kirim_discord(text):
     if not (NOTIFY["discord"] and DISCORD_URL):
         return
-    for part in split_text(text, NOTIFY["discord_max_chars"]):
-        payload = {"username": NOTIFY["discord_username"],
-                   "content": f"```\n{part}\n```"}
+    parts, cur = [], ""
+    for line in text.splitlines(keepends=True):
+        if len(cur) + len(line) > NOTIFY["discord_max_chars"] and cur:
+            parts.append(cur)
+            cur = ""
+        cur += line
+    if cur:
+        parts.append(cur)
+    for part in parts:
+        payload = {"username": NOTIFY["discord_username"], "content": f"```\n{part}\n```"}
         for _ in range(3):
             try:
-                r = SESSION.post(DISCORD_URL, json=payload, timeout=15)
+                r = requests.post(DISCORD_URL, json=payload, timeout=15)
             except requests.RequestException as e:
                 print(f"[warn] Discord gagal ({type(e).__name__})")
                 break
@@ -291,7 +103,7 @@ def kirim_discord(text):
                 time.sleep(wait + 0.5)
                 continue
             if r.status_code >= 400:
-                print(f"[warn] Discord HTTP {r.status_code}: {r.text[:200]}")
+                print(f"[warn] Discord HTTP {r.status_code}")
             break
 
 
@@ -305,144 +117,124 @@ def kirim_telegram(text):
         print(f"[warn] Telegram gagal ({type(e).__name__})")
 
 
-def kirim_semua(text):
-    kirim_discord(text)
-    kirim_telegram(text)
-
-
-# ================= MAIN =================
 def main():
     now = datetime.now(timezone.utc)
+    now_ms = int(now.timestamp() * 1000)
     wib = now + timedelta(hours=7)
-    print(f"=== analis.py | {now:%Y-%m-%d %H:%M} UTC ===")
+    print(f"=== analis 4H | {now:%Y-%m-%d %H:%M} UTC ===")
 
-    pairs = binance_init()
-    coins = [c for c in top_coins()
-             if c["symbol"] + "USDT" in pairs and c["symbol"] not in EXCLUDE]
-    print(f"Koin dengan pasangan USDT: {len(coins)}")
+    st = C.load_state(STATE, RK["equity_usd"])
+    bn = C.Binance(cfg["sources"]["binance"])
+    pairs = bn.init()
 
-    btc = klines("BTCUSDT")
-    btc_close = {c["t"]: c["c"] for c in btc}
-    tvl = tvl_map()
-
-    w = FLT["corr_window"]
-    atr_lo, atr_hi = FLT["atr_mid"]
-    kandidat = []
-
-    for coin in coins:
-        sym = coin["symbol"] + "USDT"
+    # 1. Lacak posisi yang sudah ada
+    exits, still = [], []
+    for pos in st["positions"]:
         try:
-            cs = klines(sym)
-            time.sleep(DLY["request_sec"])
+            tr = track(bn, pos, now_ms)
         except Exception as e:
-            print(f"[skip] {sym}: {e}")
+            print(f"[warn] tracking {pos['symbol']} gagal: {type(e).__name__}")
+            still.append(pos)
             continue
-        if len(cs) < FLT["min_candles"]:
-            continue
-
-        # Filter 1: korelasi terhadap BTC 4H
-        cc = {c["t"]: c["c"] for c in cs}
-        ts = [t for t in cc if t in btc_close][-(w + 1):]
-        if len(ts) < w // 2:
-            continue
-        r, beta = corr_beta(returns([cc[t] for t in ts]),
-                            returns([btc_close[t] for t in ts]))
-        if r < FLT["corr_min"]:
-            continue
-
-        # Filter 2: volatilitas ATR 4H
-        atr = atr_pct(cs)
-        if coin["rank"] <= UNI["top_tier"]:
-            if not (atr_lo <= atr <= atr_hi):
-                continue
+        if tr:
+            st["equity_usd"] += tr["pnl_usd"]
+            tr["equity_after"] = round(st["equity_usd"], 2)
+            C.append_trade(TRADES, tr)
+            st["cooldown"][pos["symbol"]] = tr["exit_ms"]
+            exits.append(tr)
         else:
-            if atr <= atr_hi:
+            still.append(pos)
+    st["positions"] = still
+
+    # 2. Regime BTC
+    btc = C.closed_only(bn.klines("BTCUSDT", limit=S["candles"]), now_ms)
+    reg_ok = C.regime_ok(btc, cfg)
+    print(f"Regime BTC: {'ON' if reg_ok else 'OFF'}")
+
+    # 3. Cari sinyal baru dan masuk posisi
+    entries, skipped = [], []
+    free = RK["max_positions"] - len(st["positions"])
+    if reg_ok and free > 0:
+        held = {p["symbol"] for p in st["positions"]}
+        vols = bn.quote_volume_24h()
+        cool_ms = RK["cooldown_bars"] * C.H4_MS
+        universe = []
+        for coin in top_coins():
+            pair = coin["symbol"] + "USDT"
+            if pair not in pairs or pair in held:
                 continue
+            if vols.get(pair, 0) < LQ["min_quote_volume_24h_usd"]:
+                continue
+            if now_ms - st["cooldown"].get(pair, -10**18) < cool_ms:
+                continue
+            universe.append((coin, pair))
 
-        # Layer 1: Technical
-        t_pts, t_flags = technical(cs)
+        cands = []
+        for coin, pair in universe:
+            try:
+                cs = C.closed_only(bn.klines(pair, limit=S["candles"]), now_ms)
+            except Exception as e:
+                print(f"[skip] {pair}: {type(e).__name__}")
+                continue
+            time.sleep(DLY["request_sec"])
+            sig = C.signal(cs, S)
+            if sig:
+                cands.append((sig["strength"], coin, pair, sig))
+        cands.sort(key=lambda x: x[0], reverse=True)
+        print(f"Kandidat sinyal: {len(cands)}")
 
-        # Layer 2: On-chain
-        flow = netflow_4h(coin["symbol"])
-        whale = whale_4h(sym)
-        tv = tvl.get(coin["symbol"])
-        tvl_g = tv.get("change_7d") if tv else None
+        for _, coin, pair, sig in cands:
+            if free <= 0:
+                break
+            try:
+                bids, asks = bn.depth(pair, LQ["depth_levels"])
+            except Exception as e:
+                skipped.append(f"{pair}: depth gagal ({type(e).__name__})")
+                continue
+            mid = (bids[0][0] + asks[0][0]) / 2
+            pos, err = C.plan_entry(pair, sig, mid, asks, st["equity_usd"], RK, now_ms)
+            if err:
+                skipped.append(f"{pair}: {err}")
+                continue
+            st["positions"].append(pos)
+            entries.append(pos)
+            free -= 1
 
-        o_pts, o_notes = 0, []
-        if flow is None:
-            o_notes.append("netflow n/a")
-        elif flow < 0:
-            o_pts += SC["netflow"]; o_notes.append("netflow<0")
-        if whale:
-            o_pts += SC["whale"]; o_notes.append(f"whale>{ONC['whale_usd']:,}")
-        if tvl_g is not None and tvl_g > ONC["tvl_min_pct"]:
-            o_pts += SC["tvl"]; o_notes.append(f"TVL {tvl_g:+.1f}%")
+    C.save_state(STATE, st)
 
-        # Layer 3: Sentiment (taker buy ratio candle terakhir, kontinu)
-        last = cs[-1]
-        taker = last["tbq"] / last["qv"] if last["qv"] else 0
-        s_pts = taker_points(taker)
-
-        # Bonus korelasi
-        c_pts = round(min(r, 1.0) * SC["corr_bonus_max"], 1)
-
-        score = round(t_pts + o_pts + s_pts + c_pts, 1)
-        kandidat.append({
-            "symbol": coin["symbol"], "rank": coin["rank"], "close": last["c"],
-            "score": score, "corr": r, "beta": beta, "atr": atr,
-            "tech": t_flags, "onchain": o_notes, "taker": taker,
-        })
-        print(f"[ok] {coin['symbol']:<6} rank {coin['rank']:<3} skor {score:>5} "
-              f"corr {r:.2f} ATR {atr:.2f}%")
-
-    kandidat.sort(key=lambda x: x["score"], reverse=True)
-    picks = assign_grades(kandidat)
-
-    os.makedirs("results", exist_ok=True)
-
-    if not picks:
-        msg = f"Tidak ada koin yang lolos filter pada {now:%Y-%m-%d %H:%M} UTC."
-        print(msg)
-        Path("results/latest.txt").write_text(msg, encoding="utf-8")
-        kirim_semua(msg)
-        return
-
-    tp_m = 1 + OUT["tp_pct"] / 100
-    sl_m = 1 - OUT["sl_pct"] / 100
-
-    blocks, detail = [], []
-    for grade, k in picks:
-        op = k["close"]
-        blocks.append(
-            f"NAMA KOIN     : {k['symbol']}/USDT\n"
-            f"GRADE PELUANG : {grade}\n"
-            f"OPEN POSISI   : {fmt(op)}\n"
-            f"TAKE PROFIT   : {fmt(op * tp_m)}\n"
-            f"STOP LOSS     : {fmt(op * sl_m)}\n"
-        )
-        detail.append(
-            f"{grade:<6} {k['symbol']}: skor {k['score']} | rank {k['rank']} | "
-            f"corr {k['corr']:.2f} | beta {k['beta']:.2f} | ATR {k['atr']:.2f}% | "
-            f"taker {k['taker']:.1%} | teknikal {', '.join(k['tech']) or '-'} | "
-            f"on-chain {', '.join(k['onchain']) or '-'}"
-        )
-
-    header = (f"ANALISIS {now:%Y-%m-%d %H:%M} UTC ({wib:%H:%M} WIB)\n"
-              f"Kandidat lolos filter: {len(kandidat)}\n\n")
-    if len(picks) < sum(n for _, n in OUT["slots"]):
-        header += f"(Hanya {len(picks)} koin yang tersedia untuk slot grade)\n\n"
-    text = header + "\n".join(blocks)
+    # 4. Laporan
+    lines = [f"ANALIS 4H {now:%Y-%m-%d %H:%M} UTC ({wib:%H:%M} WIB)",
+             f"Regime BTC: {'ON' if reg_ok else 'OFF'} | Equity: ${st['equity_usd']:,.2f} | "
+             f"Posisi terbuka: {len(st['positions'])}/{RK['max_positions']}", ""]
+    for p in entries:
+        base = p["symbol"][:-4]
+        lines += [
+            "SINYAL BARU",
+            f"NAMA KOIN      : {base}/USDT",
+            f"HARGA REF      : {price(p['mid'])}",
+            f"OPEN POSISI    : {price(p['entry_fill'])} (fill order book)",
+            f"SLIPPAGE MASUK : {p['slip_in_pct']:+.3f}%",
+            f"STOP LOSS      : {price(p['sl'])}",
+            f"TAKE PROFIT    : {price(p['tp'])}",
+            f"UKURAN         : {p['qty']:.6f} {base} (${p['qty']*p['entry_fill']:,.2f})",
+            f"RISIKO         : ${p['risk_usd']:,.2f}", ""]
+    for t in exits:
+        base = t["symbol"][:-4]
+        lines.append(f"TRADE SELESAI  {base} | {t['reason']} | net {t['net_pct']:+.2f}% | "
+                     f"R {t['r_multiple']:+.2f} | equity ${t['equity_after']:,.2f}")
+    if skipped:
+        lines += ["", "Sinyal dilewati: " + "; ".join(skipped)]
+    if not entries and not exits:
+        lines.append("Tidak ada sinyal baru atau posisi yang selesai.")
+    text = "\n".join(lines)
 
     print("\n" + text)
-    print("--- DETAIL ---")
-    print("\n".join(detail))
+    RESULTS.mkdir(exist_ok=True)
+    (RESULTS / "latest.txt").write_text(text, encoding="utf-8")
 
-    stamp = now.strftime("%Y%m%d_%H%M")
-    Path(f"results/hasil_{stamp}.txt").write_text(
-        text + "\n--- DETAIL ---\n" + "\n".join(detail), encoding="utf-8")
-    Path("results/latest.txt").write_text(text, encoding="utf-8")
-
-    kirim_semua(text)
+    if entries or exits or NOTIFY["send_when_empty"]:
+        kirim_discord(text)
+        kirim_telegram(text)
 
 
 if __name__ == "__main__":
