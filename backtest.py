@@ -43,6 +43,7 @@ def run_backtest(data, btc, cfg, equity0=None):
     """data: {pair: [candle...]}, btc: [candle...], keduanya terurut waktu.
     Urutan per candle T: (1) cek exit posisi, (2) regime, (3) entry di open T."""
     S, RK, CO = cfg["signal"], cfg["risk"], cfg["costs"]
+    R = cfg["rsi"]
     LQ, BT, REG = cfg["liquidity"], cfg["backtest"], cfg["regime"]
     equity = RK["equity_usd"] if equity0 is None else equity0
     start_equity = equity
@@ -103,9 +104,9 @@ def run_backtest(data, btc, cfg, equity0=None):
             if qv24 < LQ["min_quote_volume_24h_usd"]:
                 continue
             window = cs[max(0, j - S["candles"]):j]
-            sig = C.signal(window, S)
+            sig = C.signal(window, S, R)
             if sig:
-                cands.append((sig["strength"], pair, sig, cs[j]))
+                cands.append(((sig["grade"], sig["strength"]), pair, sig, cs[j]))
         cands.sort(key=lambda x: x[0], reverse=True)
 
         free = RK["max_positions"] - len(positions)
