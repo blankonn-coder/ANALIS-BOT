@@ -1,53 +1,50 @@
 {
   "universe": {
-    "top_n": 300,
-    "top_tier": 100,
+    "top_n": 100,
     "exclude_symbols": ["BTC"],
     "stablecoins": ["usdt", "usdc", "dai", "fdusd", "tusd", "usde", "pyusd", "busd",
                     "usds", "usdd", "eurc", "wbtc", "weth", "steth", "wbeth", "cbbtc"]
   },
-  "filters": {
+  "signal": {
     "candles": 120,
-    "min_candles": 40,
-    "corr_window": 60,
-    "corr_min": 0.70,
-    "atr_mid": [1.5, 3.0]
-  },
-  "indicators": {
     "atr_period": 14,
     "rsi_period": 14,
-    "ma_period": 20,
-    "vol_mult": 1.5,
     "rsi_lo": 50,
-    "rsi_hi": 65
+    "rsi_hi": 65,
+    "ema_period": 50,
+    "breakout_lookback": 20,
+    "vol_mult": 1.5
   },
-  "onchain": {
-    "use_netflow": true,
-    "netflow_window": "hour",
-    "netflow_limit": 4,
-    "whale_usd": 100000,
-    "aggtrades_limit": 1000,
-    "tvl_min_pct": 15.0
+  "regime": {
+    "btc_ema": 50
   },
-  "sentiment": {
-    "taker_floor": 0.50,
-    "taker_cap": 0.65
+  "liquidity": {
+    "min_quote_volume_24h_usd": 20000000,
+    "depth_levels": 100
   },
-  "scoring": {
-    "breakout": 15,
-    "near_support": 8,
-    "volume": 10,
-    "rsi": 15,
-    "netflow": 10,
-    "whale": 10,
-    "tvl": 10,
-    "taker": 20,
-    "corr_bonus_max": 10
+  "risk": {
+    "equity_usd": 1000,
+    "risk_pct": 1.0,
+    "max_notional_pct": 20,
+    "max_positions": 3,
+    "sl_atr": 1.5,
+    "tp_atr": 3.0,
+    "max_hold_bars": 12,
+    "cooldown_bars": 6,
+    "max_slippage_pct": 0.30
   },
-  "output": {
-    "slots": [["HIGH", 2], ["MEDIUM", 2], ["LOW", 2]],
-    "tp_pct": 2.0,
-    "sl_pct": 1.0
+  "costs": {
+    "fee_bps": 10,
+    "exit_slip_bps": 5,
+    "backtest_entry_slip_bps": 5
+  },
+  "backtest": {
+    "symbols": ["ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "DOGEUSDT", "AVAXUSDT",
+                "LINKUSDT", "DOTUSDT", "TRXUSDT", "LTCUSDT", "BCHUSDT", "NEARUSDT",
+                "ATOMUSDT", "UNIUSDT", "AAVEUSDT", "ETCUSDT", "FILUSDT", "APTUSDT",
+                "ARBUSDT", "OPUSDT"],
+    "start": "2023-01-01",
+    "end": "2024-12-31"
   },
   "delays": {
     "request_sec": 0.1,
@@ -58,14 +55,13 @@
       "https://api.binance.com/api/v3/",
       "https://data-api.binance.vision/api/v3/"
     ],
-    "coingecko": "https://api.coingecko.com/api/v3/",
-    "defillama": "https://api.llama.fi/",
-    "cryptoquant": "https://api.cryptoquant.com/v1/"
+    "coingecko": "https://api.coingecko.com/api/v3/"
   },
   "notify": {
     "discord": true,
     "discord_username": "analis-bot",
     "discord_max_chars": 1900,
-    "telegram": true
+    "telegram": true,
+    "send_when_empty": false
   }
 }
