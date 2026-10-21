@@ -1,9 +1,9 @@
-name: analis-4h
+name: analis-1h
 
 on:
   schedule:
-    # Setiap 4 jam: 00, 04, 08, 12, 16, 20 UTC
-    - cron: "0 0,4,8,12,16,20 * * *"
+    # Setiap 1 jam (menit ke-0, UTC)
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -16,7 +16,7 @@ concurrency:
 jobs:
   scout:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
