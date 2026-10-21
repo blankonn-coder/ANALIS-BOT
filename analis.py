@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-analis.py - scan sinyal 4H live, simulasi entry dengan slippage order book,
-dan pelacakan posisi (state di data/state.json, riwayat di data/trades.csv).
+analis.py - dijalankan tiap 1 jam.
+1. Lacak posisi yang sudah ada (state di data/state.json, riwayat di data/trades.csv).
+2. Nilai top 300 koin market cap dengan RSI (candle 4H close), beri grade 1-10.
+   Koin dengan grade terbaik (default 6-10) ditampilkan, maksimal 10 koin.
+3. Entry simulasi hanya untuk breakout yang juga lolos grade RSI, dengan slippage order book.
 Output adalah hasil analisis otomatis, BUKAN saran investasi.
 """
 
 import os
 import time
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import requests
 
@@ -16,7 +18,8 @@ import core as C
 
 cfg = C.load_config()
 S, RK, CO = cfg["signal"], cfg["risk"], cfg["costs"]
-LQ, UNI, DLY, NOTIFY = cfg["liquidity"], cfg["universe"], cfg["delays"], cfg["notify"]
+LQ, UNI, DLY, NOTIFY, R = (cfg["liquidity"], cfg["universe"], cfg["delays"],
+                           cfg["notify"], cfg["rsi"])
 EXCL = {s.upper() for s in UNI["exclude_symbols"]}
 STABLE = {s.lower() for s in UNI["stablecoins"]}
 
@@ -76,6 +79,37 @@ def track(bn, pos, now_ms):
     return None
 
 
+def scan_universe(bn, pairs, vols, now_ms):
+    """RSI + grade untuk top N koin yang punya pasangan USDT dan lolos likuiditas."""
+    rows, no_pair, illiquid, failed = [], 0, 0, 0
+    for coin in top_coins():
+        pair = coin["symbol"] + "USDT"
+        if pair not in pairs:
+            no_pair += 1
+            continue
+        if vols.get(pair, 0) < LQ["min_quote_volume_24h_usd"]:
+            illiquid += 1
+            continue
+        try:
+            cs = C.closed_only(bn.klines(pair, limit=S["candles"]), now_ms)
+        except Exception as e:
+            failed += 1
+            print(f"[skip] {pair}: {type(e).__name__}")
+            continue
+        time.sleep(DLY["request_sec"])
+        info = C.rsi_info(cs, S, R)
+        if info is None:
+            continue
+        rows.append({
+            "rank": coin["rank"], "symbol": coin["symbol"], "pair": pair,
+            "rsi": info["rsi"], "grade": info["grade"], "label": info["label"],
+            "sig": C.signal(cs, S, R),
+        })
+    stats = {"dinilai": len(rows), "tanpa_usdt": no_pair,
+             "likuiditas_rendah": illiquid, "gagal_ambil": failed}
+    return rows, stats
+
+
 def kirim_discord(text):
     if not (NOTIFY["discord"] and DISCORD_URL):
         return
@@ -117,11 +151,24 @@ def kirim_telegram(text):
         print(f"[warn] Telegram gagal ({type(e).__name__})")
 
 
+def simpan_ranking_csv(rows):
+    """Seluruh hasil penilaian (bukan hanya top) untuk ditelusuri."""
+    import csv
+    RESULTS.mkdir(exist_ok=True)
+    ordered = sorted(rows, key=lambda r: (-r["grade"], r["rsi"]))
+    with (RESULTS / "ranking.csv").open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["rank_mcap", "symbol", "rsi", "grade", "label", "breakout"])
+        for r in ordered:
+            w.writerow([r["rank"], r["symbol"], f"{r['rsi']:.2f}", r["grade"], r["label"],
+                        "ya" if r["sig"] else "tidak"])
+
+
 def main():
     now = datetime.now(timezone.utc)
     now_ms = int(now.timestamp() * 1000)
     wib = now + timedelta(hours=7)
-    print(f"=== analis 4H | {now:%Y-%m-%d %H:%M} UTC ===")
+    print(f"=== analis 1 jam | {now:%Y-%m-%d %H:%M} UTC ===")
 
     st = C.load_state(STATE, RK["equity_usd"])
     bn = C.Binance(cfg["sources"]["binance"])
@@ -151,41 +198,33 @@ def main():
     reg_ok = C.regime_ok(btc, cfg)
     print(f"Regime BTC: {'ON' if reg_ok else 'OFF'}")
 
-    # 3. Cari sinyal baru dan masuk posisi
+    # 3. Nilai semua koin (ranking RSI) - tetap jalan walau regime OFF
+    vols = bn.quote_volume_24h()
+    rows, stats = scan_universe(bn, pairs, vols, now_ms)
+    print(f"Koin dinilai: {stats['dinilai']} | tanpa USDT: {stats['tanpa_usdt']} | "
+          f"likuiditas rendah: {stats['likuiditas_rendah']} | gagal: {stats['gagal_ambil']}")
+    top = [r for r in rows if r["grade"] >= R["grade_min"]]
+    top.sort(key=lambda r: (-r["grade"], r["rsi"]))
+    top = top[:R["show_top"]]
+    simpan_ranking_csv(rows)
+
+    # 4. Entry simulasi: breakout yang lolos grade RSI, diurutkan grade lalu kekuatan breakout
     entries, skipped = [], []
     free = RK["max_positions"] - len(st["positions"])
     if reg_ok and free > 0:
         held = {p["symbol"] for p in st["positions"]}
-        vols = bn.quote_volume_24h()
         cool_ms = RK["cooldown_bars"] * C.H4_MS
-        universe = []
-        for coin in top_coins():
-            pair = coin["symbol"] + "USDT"
-            if pair not in pairs or pair in held:
-                continue
-            if vols.get(pair, 0) < LQ["min_quote_volume_24h_usd"]:
-                continue
-            if now_ms - st["cooldown"].get(pair, -10**18) < cool_ms:
-                continue
-            universe.append((coin, pair))
+        cands = [r for r in rows
+                 if r["sig"] is not None
+                 and r["pair"] not in held
+                 and now_ms - st["cooldown"].get(r["pair"], -10**18) >= cool_ms]
+        cands.sort(key=lambda r: (r["sig"]["grade"], r["sig"]["strength"]), reverse=True)
+        print(f"Kandidat breakout: {len(cands)}")
 
-        cands = []
-        for coin, pair in universe:
-            try:
-                cs = C.closed_only(bn.klines(pair, limit=S["candles"]), now_ms)
-            except Exception as e:
-                print(f"[skip] {pair}: {type(e).__name__}")
-                continue
-            time.sleep(DLY["request_sec"])
-            sig = C.signal(cs, S)
-            if sig:
-                cands.append((sig["strength"], coin, pair, sig))
-        cands.sort(key=lambda x: x[0], reverse=True)
-        print(f"Kandidat sinyal: {len(cands)}")
-
-        for _, coin, pair, sig in cands:
+        for r in cands:
             if free <= 0:
                 break
+            pair, sig = r["pair"], r["sig"]
             try:
                 bids, asks = bn.depth(pair, LQ["depth_levels"])
             except Exception as e:
@@ -202,10 +241,22 @@ def main():
 
     C.save_state(STATE, st)
 
-    # 4. Laporan
-    lines = [f"ANALIS 4H {now:%Y-%m-%d %H:%M} UTC ({wib:%H:%M} WIB)",
+    # 5. Laporan
+    lines = [f"ANALIS 1 JAM {now:%Y-%m-%d %H:%M} UTC ({wib:%H:%M} WIB)",
              f"Regime BTC: {'ON' if reg_ok else 'OFF'} | Equity: ${st['equity_usd']:,.2f} | "
-             f"Posisi terbuka: {len(st['positions'])}/{RK['max_positions']}", ""]
+             f"Posisi terbuka: {len(st['positions'])}/{RK['max_positions']}",
+             f"Universe: top {UNI['top_n']} market cap | dinilai {stats['dinilai']} koin",
+             "",
+             f"RANKING RSI (grade {R['grade_min']}-10 | RSI {R['min']}-{R['max']}, "
+             f"{R['jenuh_min']}-{R['jenuh_max']} dibatalkan)"]
+    if top:
+        lines.append(f"{'#':>2}  {'KOIN':<6} {'RSI':>5}  {'GRADE':>5}  STATUS")
+        for i, r in enumerate(top, 1):
+            lines.append(f"{i:>2}  {r['symbol']:<6} {r['rsi']:>5.1f}  {r['grade']:>2}/10  {r['label']}")
+    else:
+        lines.append(f"Tidak ada koin dengan grade >= {R['grade_min']} saat ini.")
+    lines.append("")
+
     for p in entries:
         base = p["symbol"][:-4]
         lines += [
@@ -223,16 +274,16 @@ def main():
         lines.append(f"TRADE SELESAI  {base} | {t['reason']} | net {t['net_pct']:+.2f}% | "
                      f"R {t['r_multiple']:+.2f} | equity ${t['equity_after']:,.2f}")
     if skipped:
-        lines += ["", "Sinyal dilewati: " + "; ".join(skipped)]
+        lines += ["", "Breakout dilewati: " + "; ".join(skipped)]
     if not entries and not exits:
-        lines.append("Tidak ada sinyal baru atau posisi yang selesai.")
+        lines.append("Tidak ada breakout baru atau posisi yang selesai.")
     text = "\n".join(lines)
 
     print("\n" + text)
     RESULTS.mkdir(exist_ok=True)
     (RESULTS / "latest.txt").write_text(text, encoding="utf-8")
 
-    if entries or exits or NOTIFY["send_when_empty"]:
+    if top or entries or exits or NOTIFY["send_when_empty"]:
         kirim_discord(text)
         kirim_telegram(text)
 
