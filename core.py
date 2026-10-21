@@ -147,11 +147,38 @@ def rsi(closes, n=14):
     return 100 - 100 / (1 + ag / al)
 
 
+# ================= RSI GRADE (1-10) =================
+def rsi_grade(r, R):
+    """Ubah nilai RSI menjadi grade 1-10 berdasarkan aturan R (config 'rsi').
+    - RSI di luar min..max            -> grade 0 (di luar rentang)
+    - RSI di jenuh_min..jenuh_max     -> grade 0 (dibatalkan, titik jenuh)
+    - sisanya: skala linear, min -> 10 dan max -> 1, dibulatkan.
+    RSI <= sangat_max dilabeli SANGAT REKOMENDASI."""
+    lo, hi = R["min"], R["max"]
+    if r < lo or r > hi:
+        return {"rsi": r, "grade": 0, "label": "DI LUAR RENTANG"}
+    if R["jenuh_min"] <= r <= R["jenuh_max"]:
+        return {"rsi": r, "grade": 0, "label": "JENUH - DIBATALKAN"}
+    g = 10 - (r - lo) * 9 / (hi - lo)
+    grade = int(round(min(10.0, max(1.0, g))))
+    label = "SANGAT REKOMENDASI" if r <= R["sangat_max"] else "REKOMENDASI"
+    return {"rsi": r, "grade": grade, "label": label}
+
+
+def rsi_info(cs, S, R):
+    """RSI + grade dari candle yang sudah close. None jika data belum cukup."""
+    if len(cs) < S["rsi_period"] * 3:
+        return None
+    closes = [c["c"] for c in cs]
+    return rsi_grade(rsi(closes, S["rsi_period"]), R)
+
+
 # ================= SINYAL & REGIME =================
-def signal(cs, S):
+def signal(cs, S, R):
     """Sinyal long dari candle yang sudah close (cs[-1] = candle sinyal).
     Syarat: breakout high N candle, volume >= vol_mult x rata-rata,
-    RSI di rentang, dan close di atas EMA."""
+    RSI grade >= R['entry_grade_min'] (RSI jenuh 60-70 dan di luar 35-70 ditolak),
+    dan close di atas EMA. Dikembalikan dengan grade untuk pengurutan."""
     need = max(S["ema_period"], S["breakout_lookback"] + 1, S["rsi_period"] * 3)
     if len(cs) < need:
         return None
@@ -169,13 +196,13 @@ def signal(cs, S):
     vr = last["v"] / vma if vma > 0 else 0.0
     if vr < S["vol_mult"]:
         return None
-    r = rsi(closes, S["rsi_period"])
-    if not (S["rsi_lo"] <= r <= S["rsi_hi"]):
+    info = rsi_info(cs, S, R)
+    if info is None or info["grade"] < R.get("entry_grade_min", 1):
         return None
     if last["c"] <= ema(closes, S["ema_period"]):
         return None
-    return {"atr": a, "vol_ratio": vr, "rsi": r,
-            "strength": (last["c"] - hi) / a}
+    return {"atr": a, "vol_ratio": vr, "rsi": info["rsi"], "grade": info["grade"],
+            "label": info["label"], "strength": (last["c"] - hi) / a}
 
 
 def regime_ok(btc_closed, cfg):
