@@ -1,0 +1,77 @@
+{
+  "universe": {
+    "top_n": 300,
+    "exclude_symbols": ["BTC"],
+    "stablecoins": [
+                    "usdt", "usdc", "dai", "fdusd", "tusd", "usde", "pyusd", "busd", "usds", "usdd", "eurc", "wbtc", "weth", "steth", "wbeth", "cbbtc", "usd1", "rlusd", "usdp", "gusd", "frax", "crvusd", "gho", "lusd", "susde", "usdy", "ustb"]
+  },
+  "signal": {
+    "candles": 120,
+    "atr_period": 14,
+    "rsi_period": 14,
+    "ema_period": 50,
+    "breakout_lookback": 20,
+    "vol_mult": 1.5
+  },
+  "rsi": {
+    "period": 14,
+    "min": 35,
+    "max": 70,
+    "sangat_max": 45,
+    "jenuh_min": 60,
+    "jenuh_max": 70,
+    "grade_min": 6,
+    "entry_grade_min": 1,
+    "show_top": 10,
+    "preview_top": 1
+  },
+  "regime": {
+    "btc_ema": 50
+  },
+  "liquidity": {
+    "min_quote_volume_24h_usd": 20000000,
+    "depth_levels": 100
+  },
+  "risk": {
+    "equity_usd": 1000,
+    "risk_pct": 1.0,
+    "max_notional_pct": 20,
+    "max_positions": 5,
+    "sl_atr": 1.5,
+    "tp_atr": 3.0,
+    "max_hold_bars": 12,
+    "cooldown_bars": 6,
+    "max_slippage_pct": 0.30
+  },
+  "costs": {
+    "fee_bps": 10,
+    "exit_slip_bps": 5,
+    "backtest_entry_slip_bps": 5
+  },
+  "backtest": {
+    "symbols": ["ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "DOGEUSDT", "AVAXUSDT",
+                "LINKUSDT", "DOTUSDT", "TRXUSDT", "LTCUSDT", "BCHUSDT", "NEARUSDT",
+                "ATOMUSDT", "UNIUSDT", "AAVEUSDT", "ETCUSDT", "FILUSDT", "APTUSDT",
+                "ARBUSDT", "OPUSDT"],
+    "start": "2023-01-01",
+    "end": "2024-12-31"
+  },
+  "delays": {
+    "request_sec": 0.1,
+    "coingecko_page_sec": 2
+  },
+  "sources": {
+    "binance": [
+      "https://api.binance.com/api/v3/",
+      "https://data-api.binance.vision/api/v3/"
+    ],
+    "coingecko": "https://api.coingecko.com/api/v3/"
+  },
+  "notify": {
+    "discord": true,
+    "discord_username": "analis-bot",
+    "discord_max_chars": 1900,
+    "telegram": true,
+    "send_when_empty": false
+  }
+}
