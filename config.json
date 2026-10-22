@@ -2,7 +2,16 @@
   "universe": {
     "top_n": 100,
     "top_tier": 30,
-    "stablecoins": ["usdt","usdc","busd","dai","tusd","usdd","fdusd","pyusd"],
+    "stablecoins": [
+      "usdt",
+      "usdc",
+      "busd",
+      "dai",
+      "tusd",
+      "usdd",
+      "fdusd",
+      "pyusd"
+    ],
     "exclude_symbols": []
   },
   "filters": {
@@ -10,7 +19,10 @@
     "min_candles": 120,
     "corr_window": 50,
     "corr_min": 0.5,
-    "atr_mid": [1.5, 6.0]
+    "atr_mid": [
+      1.5,
+      6.0
+    ]
   },
   "indicators": {
     "ma_period": 20,
@@ -30,7 +42,7 @@
   },
   "sentiment": {
     "taker_floor": 0.45,
-    "taker_cap": 0.60,
+    "taker_cap": 0.6,
     "taker_lookback": 5
   },
   "scoring": {
@@ -45,7 +57,20 @@
     "corr_bonus_max": 5
   },
   "output": {
-    "slots": [["HIGH", 2], ["MEDIUM", 2], ["LOW", 2]],
+    "slots": [
+      [
+        "HIGH",
+        2
+      ],
+      [
+        "MEDIUM",
+        2
+      ],
+      [
+        "LOW",
+        2
+      ]
+    ],
     "tp_pct": 10.0,
     "sl_pct": 5.0,
     "sl_atr_mult": 1.5,
@@ -60,13 +85,15 @@
     "coingecko_page_sec": 2.0
   },
   "sources": {
-    "binance": ["https://data-api.binance.vision/api/v3/"],
+    "binance": [
+      "https://data-api.binance.vision/api/v3/"
+    ],
     "coingecko": "https://api.coingecko.com/api/v3/",
     "cryptoquant": "https://api.cryptoquant.com/v1/",
     "defillama": "https://api.llama.fi/"
   },
   "notify": {
-    "discord": false,
+    "discord": true,
     "discord_username": "analis-bot",
     "discord_max_chars": 1900,
     "telegram": false
