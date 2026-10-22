@@ -1,6 +1,6 @@
 {
   "universe": {
-    "top_n": 100,
+    "top_n": 300,
     "exclude_symbols": ["BTC"],
     "stablecoins": ["usdt", "usdc", "dai", "fdusd", "tusd", "usde", "pyusd", "busd",
                     "usds", "usdd", "eurc", "wbtc", "weth", "steth", "wbeth", "cbbtc"]
@@ -9,11 +9,20 @@
     "candles": 120,
     "atr_period": 14,
     "rsi_period": 14,
-    "rsi_lo": 50,
-    "rsi_hi": 65,
     "ema_period": 50,
     "breakout_lookback": 20,
     "vol_mult": 1.5
+  },
+  "rsi": {
+    "period": 14,
+    "min": 35,
+    "max": 70,
+    "sangat_max": 45,
+    "jenuh_min": 60,
+    "jenuh_max": 70,
+    "grade_min": 6,
+    "entry_grade_min": 1,
+    "show_top": 10
   },
   "regime": {
     "btc_ema": 50
