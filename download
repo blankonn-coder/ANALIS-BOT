@@ -1,0 +1,12 @@
+text
+.env
+*.env
+config.local.json
+results/
+*.log
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+Thumbs.db

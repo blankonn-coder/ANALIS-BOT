@@ -1,0 +1,24 @@
+name: Jalankan Analis Manual
+
+on:
+  workflow_dispatch: # Ini yang memunculkan tombol "Run workflow" manual
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ambil kode dari repo
+        uses: actions/checkout@v4
+
+      - name: Siapkan Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install library
+        run: pip install requests
+
+      - name: Jalankan analis.py
+        env:
+          DRY_RUN: "1" # Memastikan 100% tidak kirim pesan ke Discord/Telegram
+        run: python analis.py

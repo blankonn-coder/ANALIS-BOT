@@ -1,0 +1,74 @@
+{
+  "universe": {
+    "top_n": 100,
+    "top_tier": 30,
+    "stablecoins": ["usdt","usdc","busd","dai","tusd","usdd","fdusd","pyusd"],
+    "exclude_symbols": []
+  },
+  "filters": {
+    "candles": 200,
+    "min_candles": 120,
+    "corr_window": 50,
+    "corr_min": 0.5,
+    "atr_mid": [1.5, 6.0]
+  },
+  "indicators": {
+    "ma_period": 20,
+    "atr_period": 14,
+    "rsi_period": 14,
+    "rsi_lo": 40,
+    "rsi_hi": 70,
+    "vol_mult": 1.5
+  },
+  "onchain": {
+    "use_netflow": true,
+    "netflow_window": 4,
+    "netflow_limit": 10,
+    "whale_usd": 500000,
+    "aggtrades_limit": 1000,
+    "tvl_min_pct": 5.0
+  },
+  "sentiment": {
+    "taker_floor": 0.45,
+    "taker_cap": 0.60,
+    "taker_lookback": 5
+  },
+  "scoring": {
+    "breakout": 20,
+    "near_support": 10,
+    "volume": 15,
+    "rsi": 10,
+    "netflow": 10,
+    "whale": 8,
+    "tvl": 7,
+    "taker": 15,
+    "corr_bonus_max": 5
+  },
+  "output": {
+    "slots": [["HIGH", 2], ["MEDIUM", 2], ["LOW", 2]],
+    "tp_pct": 10.0,
+    "sl_pct": 5.0,
+    "sl_atr_mult": 1.5,
+    "tp_atr_mult": 3.0,
+    "sl_pct_min": 1.5,
+    "sl_pct_max": 12.0,
+    "tp_pct_min": 3.0,
+    "tp_pct_max": 30.0
+  },
+  "delays": {
+    "request_sec": 0.3,
+    "coingecko_page_sec": 2.0
+  },
+  "sources": {
+    "binance": ["https://data-api.binance.vision/api/v3/"],
+    "coingecko": "https://api.coingecko.com/api/v3/",
+    "cryptoquant": "https://api.cryptoquant.com/v1/",
+    "defillama": "https://api.llama.fi/"
+  },
+  "notify": {
+    "discord": false,
+    "discord_username": "analis-bot",
+    "discord_max_chars": 1900,
+    "telegram": false
+  }
+}
