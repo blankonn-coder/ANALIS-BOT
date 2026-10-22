@@ -1,0 +1,117 @@
+{
+  "timeframe": "1h",
+  "universe": {
+    "top_n": 300,
+    "exclude_symbols": [
+      "BTC"
+    ],
+    "stablecoins": [
+      "usdt",
+      "usdc",
+      "dai",
+      "fdusd",
+      "tusd",
+      "usde",
+      "pyusd",
+      "busd",
+      "usds",
+      "usdd",
+      "eurc",
+      "wbtc",
+      "weth",
+      "steth",
+      "wbeth",
+      "cbbtc",
+      "usd1",
+      "rlusd",
+      "usdp",
+      "gusd",
+      "frax",
+      "crvusd",
+      "gho",
+      "lusd",
+      "susde",
+      "usdy",
+      "ustb"
+    ]
+  },
+  "indicators": {
+    "candles": 120,
+    "atr_period": 14,
+    "rsi_period": 14,
+    "ema_period": 50,
+    "breakout_lookback": 20,
+    "vol_mult": 1.5,
+    "vol_min_frac": 0.25
+  },
+  "rsi": {
+    "min": 35,
+    "max": 60,
+    "grade_at_min": 10,
+    "grade_at_max": 6,
+    "sangat_max": 45,
+    "grade_min": 6,
+    "entry_grade_min": 1,
+    "show_top": 10,
+    "preview_top": 1
+  },
+  "regime": {
+    "btc_ema": 50
+  },
+  "liquidity": {
+    "min_quote_volume_24h_usd": 20000000,
+    "depth_levels": 100
+  },
+  "risk": {
+    "equity_usd": 1000,
+    "risk_pct": 1.0,
+    "max_notional_pct": 20,
+    "max_positions": 5,
+    "sl_atr": 1.5,
+    "tp_atr": 3.0,
+    "max_hold_bars": 48,
+    "cooldown_bars": 24,
+    "max_slippage_pct": 0.3
+  },
+  "costs": {
+    "fee_bps": 10,
+    "exit_slip_bps": 5
+  },
+  "delays": {
+    "request_sec": 0.1,
+    "coingecko_page_sec": 2
+  },
+  "sources": {
+    "order": [
+      "binance",
+      "bybit",
+      "okx",
+      "gate"
+    ],
+    "binance": [
+      "https://api.binance.com/api/v3/",
+      "https://api1.binance.com/api/v3/",
+      "https://api2.binance.com/api/v3/",
+      "https://api3.binance.com/api/v3/",
+      "https://api4.binance.com/api/v3/",
+      "https://data-api.binance.vision/api/v3/"
+    ],
+    "bybit": [
+      "https://api.bybit.com/v5/"
+    ],
+    "okx": [
+      "https://www.okx.com/api/v5/"
+    ],
+    "gate": [
+      "https://api.gateio.ws/api/v4/"
+    ],
+    "coingecko": "https://api.coingecko.com/api/v3/"
+  },
+  "notify": {
+    "discord": true,
+    "discord_username": "analis-bot",
+    "discord_max_chars": 1900,
+    "telegram": true,
+    "send_when_empty": false
+  }
+}
