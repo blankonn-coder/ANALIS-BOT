@@ -272,8 +272,7 @@ def main():
             f"SLIPPAGE MASUK : {p['slip_in_pct']:+.3f}%",
             f"STOP LOSS      : {price(p['sl'])}",
             f"TAKE PROFIT    : {price(p['tp'])}",
-            f"UKURAN         : {p['qty']:.6f} {base} (${p['qty']*p['entry_fill']:,.2f})",
-            f"RISIKO         : ${p['risk_usd']:,.2f}", ""]
+            ""]
     for t in exits:
         base = t["symbol"][:-4]
         lines.append(f"TRADE SELESAI  {base} | {t['reason']} | net {t['net_pct']:+.2f}% | "
