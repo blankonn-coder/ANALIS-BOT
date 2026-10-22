@@ -35,7 +35,7 @@
     "equity_usd": 1000,
     "risk_pct": 1.0,
     "max_notional_pct": 20,
-    "max_positions": 3,
+    "max_positions": 5,
     "sl_atr": 1.5,
     "tp_atr": 3.0,
     "max_hold_bars": 12,
