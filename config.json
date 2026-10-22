@@ -2,8 +2,8 @@
   "universe": {
     "top_n": 300,
     "exclude_symbols": ["BTC"],
-    "stablecoins": ["usdt", "usdc", "dai", "fdusd", "tusd", "usde", "pyusd", "busd",
-                    "usds", "usdd", "eurc", "wbtc", "weth", "steth", "wbeth", "cbbtc"]
+    "stablecoins": [
+                    "usdt", "usdc", "dai", "fdusd", "tusd", "usde", "pyusd", "busd", "usds", "usdd", "eurc", "wbtc", "weth", "steth", "wbeth", "cbbtc", "usd1", "rlusd", "usdp", "gusd", "frax", "crvusd", "gho", "lusd", "susde", "usdy", "ustb"]
   },
   "signal": {
     "candles": 120,
