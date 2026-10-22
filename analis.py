@@ -235,6 +235,8 @@ def main():
             if err:
                 skipped.append(f"{pair}: {err}")
                 continue
+            pos["grade"] = sig["grade"]
+            pos["grade_label"] = sig["label"]
             st["positions"].append(pos)
             entries.append(pos)
             free -= 1
@@ -245,7 +247,9 @@ def main():
     lines = [f"ANALIS 1 JAM {now:%Y-%m-%d %H:%M} UTC ({wib:%H:%M} WIB)",
              f"Regime BTC: {'ON' if reg_ok else 'OFF'} | Equity: ${st['equity_usd']:,.2f} | "
              f"Posisi terbuka: {len(st['positions'])}/{RK['max_positions']}",
-             f"Universe: top {UNI['top_n']} market cap | dinilai {stats['dinilai']} koin",
+             f"Universe: top {UNI['top_n']} market cap | dinilai {stats['dinilai']} | "
+             f"tanpa USDT {stats['tanpa_usdt']} | likuiditas rendah {stats['likuiditas_rendah']} | "
+             f"gagal {stats['gagal_ambil']}",
              "",
              f"RANKING RSI (grade {R['grade_min']}-10 | RSI {R['min']}-{R['max']}, "
              f"{R['jenuh_min']}-{R['jenuh_max']} dibatalkan)"]
@@ -261,6 +265,7 @@ def main():
         base = p["symbol"][:-4]
         lines += [
             "SINYAL BARU",
+            f"GRADE          : {p.get('grade_label', '-').lower()} ({p.get('grade', '-')})",
             f"NAMA KOIN      : {base}/USDT",
             f"HARGA REF      : {price(p['mid'])}",
             f"OPEN POSISI    : {price(p['entry_fill'])} (fill order book)",
